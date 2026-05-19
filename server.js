@@ -19,16 +19,7 @@ const JWT_SECRET = 'matter-production-secret-' + uuidv4();
 
 const onlineUsers = new Map();
 
-// Send OTP
-app.post('/api/auth/send-otp', async (req, res) => {
-  const { phone } = req.body;
-  const otp = '123456'; // Dev mode
-  await supabase.from('otps').insert({ phone, otp, expires_at: new Date(Date.now() + 5 * 60000).toISOString() });
-  console.log('OTP for ' + phone + ': ' + otp);
-  res.json({ success: true, devOtp: otp });
-});
-
-// Verify OTP
+notepad D:\matter-project\matter_app\matter-backend\server.js// Verify OTP
 app.post('/api/auth/verify-otp', async (req, res) => {
   const { phone, otp } = req.body;
   if (otp === '123456') {
