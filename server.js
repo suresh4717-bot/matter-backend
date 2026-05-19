@@ -13,9 +13,8 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use(cors());
 app.use(express.json());
 
-const SUPABASE_URL = 'https://lsvxhairsuuiukomuvnh.supabase.co';
-const SUPABASE_KEY = 'sb_secret_wU7tIFiF_O8UDX8G5I_xtg_jRIeIZHf';
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_URL = process.env.SUPABASE_URL || 'your-supabase-url';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'your-key';const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const JWT_SECRET = 'matter-production-secret-' + uuidv4();
 
 const onlineUsers = new Map();
