@@ -34,7 +34,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
   try {
     await axios.post('https://api.msg91.com/api/v5/otp', {
-      template_id: '6a0c890c83e306928f0b0593',
+      template_id: '6a0c61a512e4aa6a5505fb72',
       mobile: phone.replace('+91', ''),
       authkey: '518111AL3uFg7QkF0z6a0c5f7cP1',
       otp: otp,
