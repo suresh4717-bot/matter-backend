@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -16,6 +18,15 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
+// ============ In-Memory User Storage (Replace with Database in Production) ============
+const users = new Map(); // phone -> user object
+const otpStore = new Map(); // phone -> otp
+
+// ============ HELPER FUNCTIONS ============
+function generateToken(userId) {
+  return jwt.sign({ userId }, process.env.JWT_SECRET || 'dev_secret_key', { expiresIn: '30d' });
+}
+
 // ============ HEALTH CHECK ============
 app.get('/', (req, res) => {
   res.json({ message: 'Matter API is running! 🚀' });
@@ -23,6 +34,193 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// ============ AUTHENTICATION ROUTES ============
+
+// Send OTP
+app.post('/api/auth/send-otp', (req, res) => {
+  const { phone } = req.body;
+  
+  if (!phone) {
+    return res.status(400).json({ error: 'Phone number required' });
+  }
+  
+  // Generate 6-digit OTP
+  const otp = '123456'; // For development, always send 123456
+  
+  // Store OTP (expires in 5 minutes)
+  otpStore.set(phone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+  
+  console.log(`📱 OTP sent to ${phone}: ${otp}`);
+  
+  // In production, send SMS here
+  res.json({ success: true, message: 'OTP sent successfully' });
+});
+
+// Verify OTP
+app.post('/api/auth/verify-otp', (req, res) => {
+  const { phone, otp } = req.body;
+  
+  if (!phone || !otp) {
+    return res.status(400).json({ error: 'Phone and OTP required' });
+  }
+  
+  // Check if user exists
+  let user = users.get(phone);
+  
+  // DEV MODE: Accept 123456 as valid OTP
+  if (otp === '123456') {
+    if (!user) {
+      // Create new user
+      user = {
+        id: uuidv4(),
+        phone: phone,
+        display_name: `User${phone.slice(-4)}`,
+        wallet_coins: 100,
+        created_at: new Date()
+      };
+      users.set(phone, user);
+    }
+    
+    const token = generateToken(user.id);
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        display_name: user.display_name,
+        wallet_coins: user.wallet_coins,
+        isNew: user.created_at.getTime() > Date.now() - 60000
+      }
+    });
+  }
+  
+  // Normal OTP verification (for production)
+  const storedOtp = otpStore.get(phone);
+  if (!storedOtp || storedOtp.otp !== otp || storedOtp.expiresAt < Date.now()) {
+    return res.status(400).json({ error: 'Invalid or expired OTP' });
+  }
+  
+  if (!user) {
+    // Create new user
+    user = {
+      id: uuidv4(),
+      phone: phone,
+      display_name: `User${phone.slice(-4)}`,
+      wallet_coins: 100,
+      created_at: new Date()
+    };
+    users.set(phone, user);
+  }
+  
+  otpStore.delete(phone);
+  
+  const token = generateToken(user.id);
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      phone: user.phone,
+      display_name: user.display_name,
+      wallet_coins: user.wallet_coins,
+      isNew: false
+    }
+  });
+});
+
+// Get current user
+app.get('/api/users/me', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret_key');
+    let user = null;
+    
+    for (const [phone, u] of users) {
+      if (u.id === decoded.userId) {
+        user = u;
+        break;
+      }
+    }
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      id: user.id,
+      phone: user.phone,
+      display_name: user.display_name,
+      wallet_coins: user.wallet_coins,
+      total_calls: user.total_calls || 0,
+      reputation_score: user.reputation_score || 3.5
+    });
+  } catch (e) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// Update user profile
+app.put('/api/users/profile', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret_key');
+    let user = null;
+    let userPhone = null;
+    
+    for (const [phone, u] of users) {
+      if (u.id === decoded.userId) {
+        user = u;
+        userPhone = phone;
+        break;
+      }
+    }
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Update user fields
+    if (req.body.display_name) user.display_name = req.body.display_name;
+    if (req.body.age) user.age = req.body.age;
+    if (req.body.city) user.city = req.body.city;
+    if (req.body.gender) user.gender = req.body.gender;
+    if (req.body.bio) user.bio = req.body.bio;
+    if (req.body.languages) user.languages = req.body.languages;
+    if (req.body.interests) user.interests = req.body.interests;
+    if (req.body.looking_for) user.looking_for = req.body.looking_for;
+    if (req.body.username) user.username = req.body.username;
+    
+    users.set(userPhone, user);
+    
+    res.json({
+      id: user.id,
+      display_name: user.display_name,
+      username: user.username,
+      age: user.age,
+      city: user.city,
+      bio: user.bio,
+      gender: user.gender,
+      languages: user.languages,
+      interests: user.interests,
+      looking_for: user.looking_for,
+      wallet_coins: user.wallet_coins
+    });
+  } catch (e) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
 });
 
 // ============ AGORA TOKEN ============
@@ -37,8 +235,17 @@ app.get('/api/agora/token', (req, res) => {
 // Store active game rooms
 const gameRooms = new Map();
 
+// Socket middleware to get user info
+io.use((socket, next) => {
+  const userId = socket.handshake.query.userId;
+  if (userId) {
+    socket.userId = userId;
+  }
+  next();
+});
+
 io.on('connection', (socket) => {
-  console.log('🎮 Player connected:', socket.id);
+  console.log('🎮 Player connected:', socket.id, 'User:', socket.userId);
 
   // ============ UNO GAME ============
   
@@ -98,7 +305,6 @@ io.on('connection', (socket) => {
   });
   
   socket.on('uno:random_join', (data, callback) => {
-    // Find available UNO room
     let availableRoom = null;
     for (const [roomId, game] of gameRooms) {
       if (game.type === 'uno' && game.status === 'waiting' && game.players.length === 1) {
@@ -138,12 +344,10 @@ io.on('connection', (socket) => {
       game.status = 'playing';
       game.currentTurn = game.players[0].id;
       
-      // Deal 7 cards to each player
       game.players.forEach(player => {
         player.cards = _generateUnoCards(7);
       });
       
-      // Start discard pile
       const firstCard = _generateRandomUnoCard();
       game.discardPile = [firstCard];
       game.currentColor = firstCard.color;
@@ -179,7 +383,6 @@ io.on('connection', (socket) => {
       game.currentColor = chosenColor || card.color;
       game.currentValue = card.value;
       
-      // Switch turn to other player
       const otherPlayer = game.players.find(p => p.id !== socket.id);
       game.currentTurn = otherPlayer.id;
       
@@ -192,7 +395,6 @@ io.on('connection', (socket) => {
       
       io.to(roomId).emit('uno:turn_changed', { userId: game.currentTurn });
       
-      // Check win
       if (player.cards.length === 0) {
         game.status = 'finished';
         io.to(roomId).emit('uno:game_ended', { winner: socket.id });
@@ -281,7 +483,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('🎮 Player disconnected:', socket.id);
     
-    // Remove player from any game room
     for (const [roomId, game] of gameRooms) {
       const playerIndex = game.players.findIndex(p => p.id === socket.id);
       if (playerIndex !== -1) {
@@ -331,4 +532,5 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🎮 Socket.io ready for multiplayer games!`);
+  console.log(`📱 OTP for development: 123456`);
 });
