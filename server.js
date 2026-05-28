@@ -28,7 +28,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-<<<<<<< HEAD
+
 // ============ ROUTES ============
 app.use('/api/creators', creatorRoutes);
 
@@ -47,11 +47,10 @@ async function authenticateToken(req, res, next) {
     res.status(401).json({ error: 'Invalid token' });
   }
 }
-=======
 // ============ IN-MEMORY STORAGE ============
 const users = new Map();
 const otpStore = new Map();
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
 
 // ============ REVENUE SPLIT CONFIGURATION ============
 const REVENUE_SPLIT = {
@@ -59,11 +58,11 @@ const REVENUE_SPLIT = {
   PUBLIC_ROOM: { WINNER: 0.75, HOST: 0.15, MATTER: 0.10 }
 };
 
-<<<<<<< HEAD
+
 // ============ STORAGE ============
 const users = new Map();
 const otpStore = new Map();
-=======
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
@@ -186,13 +185,13 @@ app.get('/api/agora/token', (req, res) => {
 });
 
 // ============ SOCKET.IO GAME ROOMS ============
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
 const gameRooms = new Map();
 const gamePots = new Map();
 const userBlocks = new Map();
 const reports = [];
 
-<<<<<<< HEAD
+
 // ============ GAME TIMER ============
 const GAME_TIMER = {
   UNO_TURN_LIMIT: 15000,
@@ -954,7 +953,7 @@ io.on('connection', (socket) => {
       message: message,
       timestamp: new Date()
     });
-=======
+
 io.on('connection', (socket) => {
   console.log('🎮 Player connected:', socket.id);
 
@@ -981,12 +980,12 @@ io.on('connection', (socket) => {
       socket.join(roomId);
       io.to(roomId).emit('uno:player_joined', { players: game.players.map(p => ({ id: p.id })) });
     }
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
   });
 
   socket.on('disconnect', () => {
     console.log('🎮 Player disconnected:', socket.id);
-<<<<<<< HEAD
+
     
     for (const [roomId, game] of gameRooms) {
       const playerIndex = game.players.findIndex(p => p.id === socket.id);
@@ -999,21 +998,21 @@ io.on('connection', (socket) => {
           gameRooms.delete(roomId);
           gamePots.delete(roomId);
           console.log(`🎮 Room deleted: ${roomId}`);
-=======
+
     for (const [roomId, game] of gameRooms) {
       const index = game.players.findIndex(p => p.id === socket.id);
       if (index !== -1) {
         game.players.splice(index, 1);
         if (game.players.length === 0) {
           gameRooms.delete(roomId);
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
         }
       }
     }
   });
 });
 
-<<<<<<< HEAD
+
 // ============ DEBUG ENDPOINT ============
 app.get('/api/debug-token', (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -1032,19 +1031,19 @@ app.get('/api/debug-token', (req, res) => {
   }
 });
 
-=======
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
 // ============ START SERVER ============
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-<<<<<<< HEAD
+
   console.log(`🎮 Socket.io ready for multiplayer games!`);
   console.log(`📱 Dev OTP: 123456`);
   console.log(`💰 Revenue Split: 1v1 (80/20), Public (75/15/10)`);
   console.log(`👑 Creator Hub endpoints ready!`);
 });
-=======
+
   console.log(`📱 Dev OTP: 123456`);
 });
->>>>>>> b19ae30810c4ed5af09e42a35d329b1d2fce821c
+ b19ae30810c4ed5af09e42a35d329b1d2fce821c
