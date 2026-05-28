@@ -47,10 +47,6 @@ async function authenticateToken(req, res, next) {
     res.status(401).json({ error: 'Invalid token' });
   }
 }
-// ============ IN-MEMORY STORAGE ============
-const users = new Map();
-const otpStore = new Map();
- b19ae30810c4ed5af09e42a35d329b1d2fce821c
 
 // ============ REVENUE SPLIT CONFIGURATION ============
 const REVENUE_SPLIT = {
@@ -62,7 +58,7 @@ const REVENUE_SPLIT = {
 // ============ STORAGE ============
 const users = new Map();
 const otpStore = new Map();
-
+const gameRooms = new Map();
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
