@@ -426,7 +426,7 @@ app.get('/api/creator/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Upload content
+// Upload content to Supabase Storage
 app.post('/api/creator/content', authenticateToken, upload.single('file'), async (req, res) => {
   const { type, title, description, price_type, price } = req.body;
   const file = req.file;
@@ -446,8 +446,28 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
       return res.status(403).json({ error: 'Creator account not approved' });
     }
     
-    const fileUrl = `/uploads/${file.filename}`;
+    // Upload to Supabase Storage 'premium-content' bucket
+    const fileExt = file.originalname.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `creators/${creator.id}/${fileName}`;
     
+    const fileBuffer = fs.readFileSync(file.path);
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('premium-content')
+      .upload(filePath, fileBuffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+    
+    if (uploadError) throw uploadError;
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('premium-content')
+      .getPublicUrl(filePath);
+    
+    // Save to database
     const { data, error } = await supabase
       .from('creator_content')
       .insert({
@@ -455,7 +475,7 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
         type: type,
         title: title,
         description: description,
-        file_url: fileUrl,
+        file_url: publicUrl,
         price_type: price_type,
         price: parseInt(price)
       })
@@ -463,8 +483,14 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
       .single();
     
     if (error) throw error;
+    
+    // Clean up temp file
+    fs.unlinkSync(file.path);
+    
     res.json({ success: true, content: data });
   } catch (error) {
+    console.error('Upload error:', error);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ error: error.message });
   }
 });
@@ -526,6 +552,28 @@ app.get('/api/creator/earnings', authenticateToken, async (req, res) => {
       pending: (creator.total_earnings || 0) - (creator.total_withdrawn || 0),
       monthly: monthlyEarnings
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all public creator content (for users to browse)
+app.get('/api/creator/feed', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('creator_content')
+      .select(`
+        *,
+        creator_profiles!inner (
+          display_name,
+          username
+        )
+      `)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    res.json({ content: data || [] });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
