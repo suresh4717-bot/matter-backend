@@ -431,14 +431,22 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
   const { type, title, description, price_type, price } = req.body;
   const file = req.file;
   
+  console.log('Upload request received');
+  console.log('Body:', req.body);
+  console.log('File:', file ? file.filename : 'No file');
+  
   try {
+    // Get creator profile
     const { data: creator, error: creatorError } = await supabase
       .from('creator_profiles')
       .select('id, status')
       .eq('user_id', req.user.id)
       .single();
     
+    console.log('Creator lookup result:', { creator, creatorError });
+    
     if (creatorError || !creator) {
+      console.log('Creator error:', creatorError);
       return res.status(403).json({ error: 'Not a creator' });
     }
     
@@ -453,6 +461,8 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
     
     const fileBuffer = fs.readFileSync(file.path);
     
+    console.log('Uploading to storage:', filePath);
+    
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('premium-content')
       .upload(filePath, fileBuffer, {
@@ -460,29 +470,45 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
         upsert: false
       });
     
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      console.log('Storage upload error:', uploadError);
+      throw uploadError;
+    }
+    
+    console.log('Storage upload success:', uploadData);
     
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from('premium-content')
       .getPublicUrl(filePath);
     
+    console.log('Public URL:', publicUrl);
+    
     // Save to database
+    const insertData = {
+      creator_id: creator.id,
+      type: type,
+      title: title,
+      description: description || '',
+      file_url: publicUrl,
+      price_type: price_type || 'pay_per_view',
+      price: parseInt(price) || 10
+    };
+    
+    console.log('Inserting into database:', insertData);
+    
     const { data, error } = await supabase
       .from('creator_content')
-      .insert({
-        creator_id: creator.id,
-        type: type,
-        title: title,
-        description: description,
-        file_url: publicUrl,
-        price_type: price_type,
-        price: parseInt(price)
-      })
+      .insert(insertData)
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      console.log('Database insert error:', error);
+      throw error;
+    }
+    
+    console.log('Database insert success:', data);
     
     // Clean up temp file
     fs.unlinkSync(file.path);
@@ -491,10 +517,9 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
   } catch (error) {
     console.error('Upload error:', error);
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message, details: error.toString() });
   }
 });
-
 // Get creator content
 app.get('/api/creator/content', authenticateToken, async (req, res) => {
   try {
