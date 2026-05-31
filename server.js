@@ -138,7 +138,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// ============ AUTHENTICATION ============
+// ============ AUTHENTICATION - FIXED TO LOAD CREATOR PROFILE ============
 app.post('/api/auth/send-otp', (req, res) => {
   const { phone } = req.body;
   if (!phone) {
@@ -193,6 +193,21 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       }
     }
     
+    // Check if user has a creator profile from Supabase
+    let creatorProfile = null;
+    try {
+      const { data: creator } = await supabase
+        .from('creator_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      creatorProfile = creator;
+      console.log(`👑 Creator profile status for ${user.id}:`, creatorProfile?.status || 'none');
+    } catch (err) {
+      console.log('⚠️ Error checking creator profile:', err.message);
+    }
+    
     const token = generateToken(user.id);
     return res.json({
       success: true,
@@ -203,7 +218,8 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         display_name: user.display_name,
         wallet_coins: user.wallet_coins,
         isNew: isNewUser
-      }
+      },
+      creatorProfile: creatorProfile
     });
   }
   
@@ -280,7 +296,6 @@ app.get('/api/agora/token', (req, res) => {
 
 // ============ WALLET ENDPOINTS ============
 
-// Get wallet
 app.get('/api/wallet', authenticateToken, async (req, res) => {
   try {
     let { data, error } = await supabase
@@ -307,7 +322,6 @@ app.get('/api/wallet', authenticateToken, async (req, res) => {
   }
 });
 
-// Add coins
 app.post('/api/wallet/add', authenticateToken, async (req, res) => {
   const { amount, description } = req.body;
   
@@ -334,7 +348,6 @@ app.post('/api/wallet/add', authenticateToken, async (req, res) => {
   }
 });
 
-// Spend coins
 app.post('/api/wallet/spend', authenticateToken, async (req, res) => {
   const { amount, description } = req.body;
   
@@ -375,7 +388,6 @@ app.post('/api/wallet/spend', authenticateToken, async (req, res) => {
 
 // ============ CREATOR HUB ENDPOINTS (FIXED) ============
 
-// Apply to become creator
 app.post('/api/creator/apply', authenticateToken, async (req, res) => {
   const { display_name, username, bio, kyc_document_url } = req.body;
   
@@ -410,27 +422,36 @@ app.post('/api/creator/apply', authenticateToken, async (req, res) => {
   }
 });
 
-// Get creator profile
+// FIXED: Get creator profile - always check Supabase
 app.get('/api/creator/profile', authenticateToken, async (req, res) => {
+  console.log('📋 Fetching creator profile for user:', req.user.id);
+  
   try {
     const { data, error } = await supabase
       .from('creator_profiles')
       .select('*')
       .eq('user_id', req.user.id)
-      .single();
+      .maybeSingle();
     
-    if (error && error.code === 'PGRST116') {
+    if (error) {
+      console.log('❌ Creator profile error:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    if (!data) {
+      console.log('📋 No creator profile found');
       return res.json({ exists: false });
     }
     
-    if (error) throw error;
+    console.log('✅ Creator profile found:', data.status);
     res.json({ exists: true, profile: data });
   } catch (error) {
+    console.error('❌ Error fetching creator profile:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
-// ============ FIXED UPLOAD ENDPOINT ============
+// FIXED: Upload content with memory storage
 app.post('/api/creator/content', authenticateToken, upload.single('file'), async (req, res) => {
   console.log('\n=== 📤 UPLOAD REQUEST ===');
   console.log('User ID:', req.user?.id);
@@ -447,7 +468,7 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
   console.log('File:', file.originalname, file.mimetype, file.size + ' bytes');
   
   try {
-    // Get creator profile
+    // Get creator profile from Supabase
     const { data: creator, error: creatorError } = await supabase
       .from('creator_profiles')
       .select('id, status')
@@ -455,11 +476,13 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
       .single();
     
     if (creatorError || !creator) {
-      return res.status(403).json({ error: 'Not a creator' });
+      console.log('❌ Creator not found:', creatorError?.message);
+      return res.status(403).json({ error: 'Not a creator. Please apply first.' });
     }
     
     if (creator.status !== 'approved') {
-      return res.status(403).json({ error: 'Creator account not approved' });
+      console.log('❌ Creator not approved:', creator.status);
+      return res.status(403).json({ error: 'Creator account not approved. Status: ' + creator.status });
     }
     
     // Generate unique filename
@@ -467,7 +490,7 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `creators/${creator.id}/${fileName}`;
     
-    console.log('Uploading to:', filePath);
+    console.log('📤 Uploading to storage:', filePath);
     
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -478,18 +501,18 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
       });
     
     if (uploadError) {
-      console.log('❌ Storage error:', uploadError.message);
+      console.log('❌ Storage upload error:', uploadError.message);
       return res.status(500).json({ error: 'Storage upload failed: ' + uploadError.message });
     }
     
-    console.log('✅ Storage upload success');
+    console.log('✅ Storage upload successful');
     
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from('premium-content')
       .getPublicUrl(filePath);
     
-    console.log('Public URL:', publicUrl);
+    console.log('🔗 Public URL:', publicUrl);
     
     // Save to database
     const { data: contentData, error: dbError } = await supabase
@@ -508,15 +531,15 @@ app.post('/api/creator/content', authenticateToken, upload.single('file'), async
       .single();
     
     if (dbError) {
-      console.log('❌ DB error:', dbError.message);
+      console.log('❌ Database insert error:', dbError.message);
       return res.status(500).json({ error: 'Database save failed: ' + dbError.message });
     }
     
-    console.log('✅ All done!');
+    console.log('✅ All done! Content ID:', contentData.id);
     res.json({ success: true, content: contentData });
     
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error('❌ Upload error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -907,9 +930,6 @@ app.get('/api/debug-token', (req, res) => {
   if (!token) {
     return res.json({ error: 'No token provided' });
   }
-  
-  console.log('Token to verify:', token);
-  console.log('Using JWT_SECRET:', process.env.JWT_SECRET || 'dev_secret_key');
   
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret_key');
